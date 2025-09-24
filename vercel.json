@@ -9,11 +9,5 @@
     "env": {
       "NEXT_PUBLIC_FHIR_BASE_URL": "https://pathpilot-api.onrender.com"
     }
-  },
-  "functions": {
-    "app/api/fhir/[...path]/route.ts": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 60
-    }
   }
 }
