@@ -68,6 +68,7 @@ interface IntelligenceResponse {
 export default function PatientIntelligenceGrid() {
   const [data, setData] = useState<IntelligenceResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'critical' | 'deteriorating'>('all');
   const router = useRouter();
 
@@ -79,12 +80,26 @@ export default function PatientIntelligenceGrid() {
 
   const fetchIntelligenceData = async () => {
     try {
+      setError(null);
       const response = await fetch('/api/fhir/api/patient-intelligence');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API Error: ${response.status}`);
+      }
+
       const data = await response.json();
+
+      // Check if we actually got valid data
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid data received from API');
+      }
+
       setData(data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching patient intelligence:', error);
+      setError(error instanceof Error ? error.message : 'Failed to connect to backend API');
       setLoading(false);
     }
   };
@@ -143,6 +158,70 @@ export default function PatientIntelligenceGrid() {
                 <div key={i} className="h-32 bg-gray-200 rounded"></div>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error || !data) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                  <Brain className="w-8 h-8 text-indigo-600" />
+                  PathPilot Intelligence Command Center
+                </h1>
+                <p className="text-gray-600 mt-1">AI-Powered Lab Intelligence & Clinical Decision Support</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-8 text-center">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-red-800 mb-2">Unable to Connect to Backend API</h2>
+            <p className="text-red-700 mb-6">
+              {error || 'The PathPilot API service is currently unavailable'}
+            </p>
+            <div className="bg-white border border-red-200 rounded-lg p-4 mb-6 max-w-2xl mx-auto">
+              <h3 className="font-semibold text-gray-800 mb-2">Troubleshooting:</h3>
+              <ul className="text-left text-gray-700 space-y-2">
+                <li>• The backend API at <code className="bg-gray-100 px-2 py-1 rounded">https://pathpilot-api.onrender.com</code> appears to be suspended</li>
+                <li>• Check if the Render service needs to be reactivated</li>
+                <li>• Verify that CORS is properly configured for Vercel domains</li>
+                <li>• API endpoint being called: <code className="bg-gray-100 px-2 py-1 rounded">/api/patient-intelligence</code></li>
+              </ul>
+            </div>
+            <button
+              onClick={() => {
+                setLoading(true);
+                setError(null);
+                fetchIntelligenceData();
+              }}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Retry Connection
+            </button>
+          </div>
+
+          {/* Show demo message */}
+          <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <h3 className="font-semibold text-blue-900 mb-2">Demo Mode</h3>
+            <p className="text-blue-800">
+              This UI is designed to work with the PathPilot FHIR API which provides:
+            </p>
+            <ul className="mt-2 space-y-1 text-blue-700">
+              <li>• MIMIC-IV clinical demo data</li>
+              <li>• Real-time patient risk scoring</li>
+              <li>• Lab result analysis</li>
+              <li>• In-memory caching for performance</li>
+            </ul>
           </div>
         </div>
       </div>

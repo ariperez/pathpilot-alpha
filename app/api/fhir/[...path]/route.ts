@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Use MIMIC FHIR server from environment or default to local
-const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'http://localhost:8000';
+// Use production API server
+const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://pathpilot-api.onrender.com';
 
 export async function GET(
   request: NextRequest,
@@ -13,13 +13,26 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams.toString();
     const url = `${FHIR_BASE_URL}/${path}${searchParams ? `?${searchParams}` : ''}`;
 
+    console.log(`Proxying request to: ${url}`);
+
     const response = await fetch(url, {
       headers: {
         'Accept': 'application/json+fhir',
       },
+      // Add timeout
+      signal: AbortSignal.timeout(30000), // 30 second timeout
     });
 
     if (!response.ok) {
+      // Check if the response is HTML (likely an error page)
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('text/html')) {
+        return NextResponse.json(
+          { error: 'Backend API service is currently suspended or unavailable. The Render.com service may need to be reactivated.' },
+          { status: 503 }
+        );
+      }
+
       return NextResponse.json(
         { error: `FHIR API error: ${response.status}` },
         { status: response.status }
