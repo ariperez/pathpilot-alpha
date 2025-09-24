@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Use production API server
-const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://pathpilot-api.onrender.com';
+const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://pathpilot-api-et5z.onrender.com';
 
 export async function GET(
   request: NextRequest,

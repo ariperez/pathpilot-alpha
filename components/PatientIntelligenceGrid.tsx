@@ -192,7 +192,7 @@ export default function PatientIntelligenceGrid() {
             <div className="bg-white border border-red-200 rounded-lg p-4 mb-6 max-w-2xl mx-auto">
               <h3 className="font-semibold text-gray-800 mb-2">Troubleshooting:</h3>
               <ul className="text-left text-gray-700 space-y-2">
-                <li>• The backend API at <code className="bg-gray-100 px-2 py-1 rounded">https://pathpilot-api.onrender.com</code> appears to be suspended</li>
+                <li>• The backend API at <code className="bg-gray-100 px-2 py-1 rounded">https://pathpilot-api-et5z.onrender.com</code> appears to be suspended</li>
                 <li>• Check if the Render service needs to be reactivated</li>
                 <li>• Verify that CORS is properly configured for Vercel domains</li>
                 <li>• API endpoint being called: <code className="bg-gray-100 px-2 py-1 rounded">/api/patient-intelligence</code></li>

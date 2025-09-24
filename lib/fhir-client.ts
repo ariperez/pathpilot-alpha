@@ -1,7 +1,7 @@
 import { FHIRBundle, FHIRObservation, LabResult, Patient } from './types';
 
 // Use production API server
-const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://pathpilot-api.onrender.com';
+const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://pathpilot-api-et5z.onrender.com';
 // MIMIC patient ID with rich lab data (8000+ observations)
 const DEFAULT_PATIENT_ID = process.env.NEXT_PUBLIC_DEFAULT_PATIENT_ID || '28dcf33b-0c52-587f-83ad-2a3270976719';
 
