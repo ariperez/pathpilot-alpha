@@ -1,60 +1,226 @@
 import { FHIRBundle, FHIRObservation, LabResult, Patient } from './types';
 
-// Use production API server
-const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://pathpilot-api-et5z.onrender.com';
-// MIMIC patient ID with rich lab data (8000+ observations)
-const DEFAULT_PATIENT_ID = process.env.NEXT_PUBLIC_DEFAULT_PATIENT_ID || '28dcf33b-0c52-587f-83ad-2a3270976719';
+const FHIR_BASE_URL = process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://mimic-fhir-api.onrender.com';
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
 
 export class FHIRClient {
   private baseUrl: string;
+  private cache: Map<string, CacheEntry<any>> = new Map();
+  private readonly DEFAULT_TTL = process.env.NEXT_PUBLIC_CACHE_TTL ?
+    parseInt(process.env.NEXT_PUBLIC_CACHE_TTL) :
+    5 * 60 * 1000; // Configurable cache TTL, default 5 minutes
+  private isServer: boolean;
 
   constructor(baseUrl: string = FHIR_BASE_URL) {
     this.baseUrl = baseUrl;
+    this.isServer = typeof window === 'undefined';
   }
 
-  async getPatient(patientId: string = DEFAULT_PATIENT_ID): Promise<Patient> {
-    try {
-      const response = await fetch(`/api/fhir/Patient/${patientId}`);
-      const data = await response.json();
-
-      return {
-        id: data.id,
-        name: data.name?.[0]?.given?.[0] + ' ' + data.name?.[0]?.family || 'Unknown Patient',
-        birthDate: data.birthDate,
-        gender: data.gender,
-        mrn: data.identifier?.find((id: { type?: { coding?: Array<{ code?: string }> } }) => id.type?.coding?.[0]?.code === 'MR')?.value || 'Unknown'
-      };
-    } catch (error) {
-      console.error('Error fetching patient:', error);
-      // Return MIMIC patient for demo
-      return {
-        id: DEFAULT_PATIENT_ID,
-        name: 'Patient 10007795', // MIMIC uses anonymized names
-        birthDate: '2083-04-10',
-        gender: 'female',
-        mrn: '10007795'
-      };
+  private getFullUrl(path: string): string {
+    // On server, use direct FHIR URL; on client, use API proxy
+    if (this.isServer) {
+      return `${this.baseUrl}${path}`;
     }
+    return `/api/fhir${path}`;
   }
 
-  async getLabResults(
-    patientId: string = DEFAULT_PATIENT_ID,
-    count: number = 100
-  ): Promise<LabResult[]> {
-    try {
-      // MIMIC data doesn't use category filter - get all observations
-      const response = await fetch(
-        `/api/fhir/Observation?patient=${patientId}&_count=${count}`
-      );
-      const bundle: FHIRBundle = await response.json();
+  private getCacheKey(endpoint: string): string {
+    return `${this.baseUrl}${endpoint}`;
+  }
 
-      if (!bundle.entry) return [];
+  private getFromCache<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
 
-      return bundle.entry.map(entry => this.transformObservation(entry.resource));
-    } catch (error) {
-      console.error('Error fetching lab results:', error);
+    if (Date.now() > entry.timestamp + entry.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data as T;
+  }
+
+  private setCache<T>(key: string, data: T, ttl = this.DEFAULT_TTL): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl
+    });
+  }
+
+  async getPatient(patientId: string): Promise<Patient> {
+    const cacheKey = this.getCacheKey(`/Patient/${patientId}`);
+    const cached = this.getFromCache<Patient>(cacheKey);
+    if (cached) return cached;
+
+    const response = await fetch(this.getFullUrl(`/Patient/${patientId}`));
+
+    if (!response.ok) {
+      let errorMessage = `Failed to fetch patient ${patientId}: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage = errorData.error;
+          if (errorData.details) errorMessage += ` - ${errorData.details}`;
+        }
+      } catch {
+        // If JSON parsing fails, use default message
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+
+    // Construct meaningful patient identifier from FHIR data
+    let patientName = 'Unknown Patient';
+    const patientIdentifier = data.identifier?.find((id: any) => id.system === 'http://mimic.mit.edu/fhir/mimic/identifier/patient')?.value;
+
+    if (data.name && data.name[0]) {
+      const given = data.name[0].given?.[0] || '';
+      const family = data.name[0].family || '';
+
+      // Check if the name is a generic MIMIC dataset name (Patient_XXXXX format)
+      if (family && family.startsWith('Patient_') && !given) {
+        // Use a more meaningful identifier for display
+        patientName = `Patient ID: ${patientIdentifier || family.replace('Patient_', '')}`;
+      } else if (given || family) {
+        patientName = [given, family].filter(Boolean).join(' ');
+      }
+    } else if (patientIdentifier) {
+      patientName = `Patient ID: ${patientIdentifier}`;
+    }
+
+    const patient: Patient = {
+      id: data.id,
+      name: patientName,
+      birthDate: data.birthDate,
+      gender: data.gender,
+      mrn: data.identifier?.find((id: { type?: { coding?: Array<{ code?: string }> } }) => id.type?.coding?.[0]?.code === 'MR')?.value || patientIdentifier || 'Unknown'
+    };
+
+    this.setCache(cacheKey, patient);
+    return patient;
+  }
+
+  async getPatients(pageSize?: number, offset?: number): Promise<Patient[]> {
+    // Build query params for pagination strategy
+    let queryParams = '';
+    if (pageSize) {
+      queryParams = `?_count=${pageSize}`;
+      if (offset) {
+        queryParams += `&_offset=${offset}`;
+      }
+    }
+
+    const cacheKey = this.getCacheKey(`/Patient${queryParams}`);
+    const cached = this.getFromCache<Patient[]>(cacheKey);
+    if (cached) return cached;
+
+    // Fetch all available patients or use pagination if specified
+    const response = await fetch(this.getFullUrl(`/Patient${queryParams}`))
+
+    if (!response.ok) {
+      let errorMessage = `Failed to fetch patients: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage = errorData.error;
+          if (errorData.details) errorMessage += ` - ${errorData.details}`;
+        }
+      } catch {
+        // If JSON parsing fails, use default message
+      }
+      throw new Error(errorMessage);
+    }
+
+    const bundle: FHIRBundle = await response.json();
+
+    if (!bundle.entry) {
       return [];
     }
+
+    const patients = bundle.entry.map(entry => {
+      // Construct meaningful patient identifier from FHIR data
+      let patientName = 'Unknown Patient';
+      const patientIdentifier = entry.resource.identifier?.find((id: any) => id.system === 'http://mimic.mit.edu/fhir/mimic/identifier/patient')?.value;
+
+      if (entry.resource.name && entry.resource.name[0]) {
+        const given = entry.resource.name[0].given?.[0] || '';
+        const family = entry.resource.name[0].family || '';
+
+        // Check if the name is a generic MIMIC dataset name (Patient_XXXXX format)
+        if (family && family.startsWith('Patient_') && !given) {
+          // Use a more meaningful identifier for display
+          patientName = `Patient ID: ${patientIdentifier || family.replace('Patient_', '')}`;
+        } else if (given || family) {
+          patientName = [given, family].filter(Boolean).join(' ');
+        }
+      } else if (patientIdentifier) {
+        patientName = `Patient ID: ${patientIdentifier}`;
+      }
+
+      return {
+        id: entry.resource.id,
+        name: patientName,
+        birthDate: entry.resource.birthDate,
+        gender: entry.resource.gender,
+        mrn: entry.resource.identifier?.find((id: { type?: { coding?: Array<{ code?: string }> } }) => id.type?.coding?.[0]?.code === 'MR')?.value || patientIdentifier || 'Unknown'
+      };
+    });
+
+    this.setCache(cacheKey, patients);
+    return patients;
+  }
+
+  async getLabCount(patientId: string): Promise<number> {
+    // Get just the total count using _summary=count
+    const queryParams = `patient=${patientId}&_summary=count`;
+    const response = await fetch(this.getFullUrl(`/Observation?${queryParams}`));
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch lab count for patient ${patientId}: ${response.status}`);
+    }
+
+    const bundle = await response.json();
+
+    if (bundle.total === undefined) {
+      throw new Error(`FHIR server did not return total count for patient ${patientId}`);
+    }
+
+    return bundle.total;
+  }
+
+  async getRecentLabs(
+    patientId: string,
+    limit: number = 10
+  ): Promise<{ labs: LabResult[], criticalCount: number, abnormalCount: number }> {
+    // Fetch a small sample of recent labs to analyze and display
+    const queryParams = `patient=${patientId}&_count=${limit}&_sort=-date`;
+
+    const response = await fetch(this.getFullUrl(`/Observation?${queryParams}`));
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch lab results for patient ${patientId}: ${response.status}`);
+    }
+
+    const bundle: FHIRBundle = await response.json();
+
+    if (!bundle.entry) {
+      return { labs: [], criticalCount: 0, abnormalCount: 0 };
+    }
+
+    const labs = bundle.entry.map(entry => this.transformObservation(entry.resource));
+
+    // Count critical and abnormal from this sample
+    const criticalCount = labs.filter(lab => lab.status === 'critical').length;
+    const abnormalCount = labs.filter(lab => lab.status === 'abnormal').length;
+
+    return { labs, criticalCount, abnormalCount };
   }
 
   private transformObservation(obs: FHIRObservation): LabResult {
@@ -72,33 +238,12 @@ export class FHIRClient {
       }
     }
 
-    // Check for critical values based on common lab thresholds
-    const criticalRanges: { [key: string]: { low?: number; high?: number } } = {
-      'Potassium': { low: 2.5, high: 6.5 },
-      'Sodium': { low: 120, high: 160 },
-      'Glucose': { low: 40, high: 500 },
-      'Hemoglobin': { low: 5, high: 20 },
-      'Platelet': { low: 20, high: 1000 },
-      'Creatinine': { high: 10 }
-    };
-
-    // MIMIC data uses coding[0].display instead of text
     const labName = obs.code.text || obs.code.coding?.[0]?.display || 'Unknown';
-    const critical = Object.entries(criticalRanges).find(([key]) =>
-      labName.toLowerCase().includes(key.toLowerCase())
-    );
-
-    if (critical && value !== undefined) {
-      const [, range] = critical;
-      if ((range.high && value > range.high) || (range.low && value < range.low)) {
-        status = 'critical';
-      }
-    }
 
     return {
       id: obs.id,
       code: obs.code.coding?.[0]?.code || '',
-      name: labName, // Use the same labName we computed above
+      name: labName,
       value: value ?? 'N/A',
       unit,
       referenceRange: refRange ? {
@@ -113,27 +258,47 @@ export class FHIRClient {
     };
   }
 
-  async getDiagnosticReports(patientId: string = DEFAULT_PATIENT_ID) {
+  async getLabResults(patientId: string, limit: number = 50) {
     try {
-      const response = await fetch(
-        `/api/fhir/DiagnosticReport?patient=${patientId}&_count=20&_sort=-date`
-      );
-      const bundle = await response.json();
+      // Fetch recent lab observations for this patient
+      const queryParams = `patient=${patientId}&_count=${limit}&_sort=-date`;
+      const response = await fetch(this.getFullUrl(`/Observation?${queryParams}`));
 
-      if (!bundle.entry) return [];
+      if (!response.ok) {
+        console.error(`Failed to fetch lab results for patient ${patientId}: ${response.status}`);
+        return {
+          results: [],
+          totalCount: 0
+        };
+      }
 
-      return bundle.entry.map((entry: { resource: { id: string; status: string; code?: { coding?: Array<{ code?: string }>; text?: string }; effectivePeriod?: { start?: string }; effectiveDateTime?: string; conclusion?: string; presentedForm?: Array<unknown> } }) => ({
-        id: entry.resource.id,
-        status: entry.resource.status,
-        code: entry.resource.code?.coding?.[0]?.code || '',
-        name: entry.resource.code?.text || 'Unknown Report',
-        effectiveDateTime: entry.resource.effectivePeriod?.start || entry.resource.effectiveDateTime,
-        conclusion: entry.resource.conclusion,
-        presentedForm: entry.resource.presentedForm
-      }));
+      const bundle: FHIRBundle = await response.json();
+
+      if (!bundle.entry) {
+        return {
+          results: [],
+          totalCount: bundle.total || 0
+        };
+      }
+
+      // Transform FHIR Observations to LabResult format
+      const results = bundle.entry.map(entry => this.transformObservation(entry.resource));
+
+      return {
+        results,
+        totalCount: bundle.total || results.length
+      };
     } catch (error) {
-      console.error('Error fetching diagnostic reports:', error);
-      return [];
+      console.error('Error fetching lab results:', error);
+      return {
+        results: [],
+        totalCount: 0
+      };
     }
+  }
+
+  async getDiagnosticReports(patientId: string) {
+    // Temporary stub - return empty array for now
+    return [];
   }
 }

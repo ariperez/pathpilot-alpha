@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { LabResult } from '@/lib/types';
 import { Clock, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -8,7 +9,7 @@ interface LabCardProps {
   lab: LabResult;
 }
 
-export default function LabCard({ lab }: LabCardProps) {
+export default React.memo(function LabCard({ lab }: LabCardProps) {
   const statusColors = {
     normal: 'bg-green-100 text-green-800 border-green-200',
     abnormal: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -59,4 +60,4 @@ export default function LabCard({ lab }: LabCardProps) {
       </div>
     </div>
   );
-}
+});

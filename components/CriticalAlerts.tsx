@@ -53,7 +53,8 @@ export default function CriticalAlerts({ labs, loading }: CriticalAlertsProps) {
                 Critical Values Requiring Immediate Attention
               </h3>
               <div className="space-y-2">
-                {criticalLabs.slice(0, 3).map((lab) => (
+                {/* Show ALL critical labs, not just 3 */}
+                {criticalLabs.map((lab) => (
                   <div key={lab.id} className="bg-white rounded-md p-3 border border-red-200">
                     <div className="flex justify-between items-start">
                       <div>
@@ -76,6 +77,11 @@ export default function CriticalAlerts({ labs, loading }: CriticalAlertsProps) {
                     </div>
                   </div>
                 ))}
+                {criticalLabs.length > 5 && (
+                  <p className="text-xs text-gray-600 text-center mt-2">
+                    Showing all {criticalLabs.length} critical values
+                  </p>
+                )}
               </div>
             </div>
           </div>

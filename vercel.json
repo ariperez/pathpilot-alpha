@@ -3,11 +3,11 @@
   "outputDirectory": ".next",
   "framework": "nextjs",
   "env": {
-    "NEXT_PUBLIC_FHIR_BASE_URL": "https://pathpilot-api-et5z.onrender.com"
+    "NEXT_PUBLIC_FHIR_BASE_URL": "https://mimic-fhir-api.onrender.com"
   },
   "build": {
     "env": {
-      "NEXT_PUBLIC_FHIR_BASE_URL": "https://pathpilot-api-et5z.onrender.com"
+      "NEXT_PUBLIC_FHIR_BASE_URL": "https://mimic-fhir-api.onrender.com"
     }
   }
 }

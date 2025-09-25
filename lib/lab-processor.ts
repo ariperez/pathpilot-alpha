@@ -38,7 +38,8 @@ export class LabProcessor {
         labName,
         code: results[0].code,
         unit: results[0].unit,
-        data: numericResults.slice(0, 10).map(r => ({
+        // Use all available data for trends, not arbitrary limit
+        data: numericResults.map(r => ({
           date: r.effectiveDateTime,
           value: r.value as number,
           status: r.status
@@ -131,20 +132,8 @@ export class LabProcessor {
   }
 
   private static getContextNarrative(lab: LabResult): string {
-    const contexts: { [key: string]: string } = {
-      'Potassium': 'Important for heart and muscle function.',
-      'Creatinine': 'Indicates kidney function.',
-      'Hemoglobin': 'Carries oxygen in red blood cells.',
-      'Glucose': 'Blood sugar level.',
-      'Sodium': 'Maintains fluid balance.',
-      'Platelet': 'Essential for blood clotting.'
-    };
-
-    const context = Object.entries(contexts).find(([key]) =>
-      lab.name.toLowerCase().includes(key.toLowerCase())
-    );
-
-    return context ? context[1] : '';
+    // Context should come from FHIR Observation.component or related resources
+    return '';
   }
 
   static getRecentLabsSummary(labResults: LabResult[]): string {

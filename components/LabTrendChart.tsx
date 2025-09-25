@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { LabTrend } from '@/lib/types';
 import { Line } from 'react-chartjs-2';
 import {
@@ -30,7 +31,7 @@ interface LabTrendChartProps {
   trend: LabTrend;
 }
 
-export default function LabTrendChart({ trend }: LabTrendChartProps) {
+export default React.memo(function LabTrendChart({ trend }: LabTrendChartProps) {
   const trendIcon = trend.trend === 'rising' ? (
     <TrendingUp className="w-4 h-4 text-orange-500" />
   ) : trend.trend === 'falling' ? (
@@ -168,4 +169,4 @@ export default function LabTrendChart({ trend }: LabTrendChartProps) {
       </div>
     </div>
   );
-}
+});
